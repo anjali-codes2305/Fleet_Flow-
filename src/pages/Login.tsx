@@ -6,13 +6,14 @@ import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "@/hooks/use-toast";
 import { lovable } from "@/integrations/lovable/index";
 import loginHero from "@/assets/login-hero.jpg";
+import { supabase } from "@/integrations/supabase/client";
 
 const Login = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [selectedRole, setSelectedRole] = useState<"manager" | "dispatcher">("dispatcher");
+  const [managerKey, setManagerKey] = useState("");
   const [isSignUp, setIsSignUp] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
@@ -26,12 +27,36 @@ const Login = () => {
     setIsLoading(true);
     try {
       if (isSignUp) {
-        const { error } = await signUp(email, password, fullName, selectedRole);
+        const expectedKey = import.meta.env.VITE_MANAGER_KEY || "SECRET_MANAGER_KEY_123";
+        if (managerKey !== expectedKey) {
+          throw new Error("Invalid Manager Access Key.");
+        }
+        const { error } = await signUp(email, password, fullName, "manager");
         if (error) throw error;
         toast({ title: "Account created!", description: "Check your email to confirm your account." });
       } else {
         const { error } = await signIn(email, password);
         if (error) throw error;
+        
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const { data: roleData } = await supabase
+            .from("user_roles")
+            .select("role")
+            .eq("user_id", user.id)
+            .maybeSingle();
+            
+          if (roleData?.role === "dispatcher") {
+            navigate("/trips");
+            return;
+          } else if (roleData?.role === "safety_officer") {
+            navigate("/maintenance");
+            return;
+          } else if (roleData?.role === "financial_analyst") {
+            navigate("/expenses");
+            return;
+          }
+        }
       }
       navigate("/");
     } catch (err: any) {
@@ -102,23 +127,8 @@ const Login = () => {
                   <input type="text" value={fullName} onChange={e => setFullName(e.target.value)} placeholder="John Doe" required className="w-full h-11 px-3 rounded-lg bg-secondary border border-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all" />
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1.5 block">Role</label>
-                  <div className="grid grid-cols-2 gap-2">
-                    {([
-                      { value: "manager" as const, label: "Manager", desc: "Full system access" },
-                      { value: "dispatcher" as const, label: "Dispatcher", desc: "Trip operations" },
-                    ]).map(r => (
-                      <button
-                        key={r.value}
-                        type="button"
-                        onClick={() => setSelectedRole(r.value)}
-                        className={`p-3 rounded-lg border text-left transition-all ${selectedRole === r.value ? "border-primary bg-primary/10 ring-1 ring-primary/30" : "border-border bg-secondary hover:bg-secondary/80"}`}
-                      >
-                        <p className={`text-sm font-semibold ${selectedRole === r.value ? "text-primary" : "text-foreground"}`}>{r.label}</p>
-                        <p className="text-[10px] text-muted-foreground">{r.desc}</p>
-                      </button>
-                    ))}
-                  </div>
+                  <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1.5 block">Manager Access Key</label>
+                  <input type="password" value={managerKey} onChange={e => setManagerKey(e.target.value)} placeholder="Enter secret key" required className="w-full h-11 px-3 rounded-lg bg-secondary border border-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all" />
                 </div>
               </>
             )}

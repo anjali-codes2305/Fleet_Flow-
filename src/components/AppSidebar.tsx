@@ -1,6 +1,10 @@
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
-import { LayoutDashboard, Truck, Route, Users, Wrench, BarChart3, Fuel, LogOut, ChevronLeft, Menu, Shield, UserCog, Trophy } from "lucide-react";
+import { LayoutDashboard, Truck, Route, Users, Wrench, BarChart3, Fuel, LogOut, ChevronLeft, Menu, Shield, UserCog, Trophy, Lock } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { toast } from "@/hooks/use-toast";
+import { Button } from "@/components/ui/button";
+import { supabase } from "@/integrations/supabase/client";
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/contexts/AuthContext";
@@ -9,6 +13,10 @@ import ThemeToggle from "@/components/ThemeToggle";
 
 const AppSidebar = () => {
   const [collapsed, setCollapsed] = useState(false);
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
   const { user, signOut } = useAuth();
@@ -30,6 +38,31 @@ const AppSidebar = () => {
   const handleSignOut = async () => {
     await signOut();
     navigate("/login");
+  };
+
+  const handleUpdatePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (newPassword !== confirmPassword) {
+      toast({ title: "Validation Error", description: "Passwords do not match", variant: "destructive" });
+      return;
+    }
+    if (newPassword.length < 6) {
+      toast({ title: "Validation Error", description: "Password must be at least 6 characters", variant: "destructive" });
+      return;
+    }
+    setIsUpdatingPassword(true);
+    try {
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) throw error;
+      toast({ title: "Success", description: "Your password has been successfully updated!" });
+      setIsChangingPassword(false);
+      setNewPassword("");
+      setConfirmPassword("");
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally {
+      setIsUpdatingPassword(false);
+    }
   };
 
   const initials = user?.user_metadata?.full_name
@@ -98,11 +131,45 @@ const AppSidebar = () => {
 
       <div className="p-2 border-t border-sidebar-border space-y-0.5">
         <ThemeToggle collapsed={collapsed} />
+        <button onClick={() => setIsChangingPassword(true)} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-muted-foreground hover:bg-sidebar-accent hover:text-foreground transition-colors">
+          <Lock className="w-[18px] h-[18px] shrink-0" />
+          <AnimatePresence>{!collapsed && <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="whitespace-nowrap">Change Password</motion.span>}</AnimatePresence>
+        </button>
         <button onClick={handleSignOut} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-muted-foreground hover:bg-sidebar-accent hover:text-destructive transition-colors">
           <LogOut className="w-[18px] h-[18px] shrink-0" />
           <AnimatePresence>{!collapsed && <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="whitespace-nowrap">Sign Out</motion.span>}</AnimatePresence>
         </button>
       </div>
+
+      <Dialog open={isChangingPassword} onOpenChange={(open) => {
+        setIsChangingPassword(open);
+        if (!open) { setNewPassword(""); setConfirmPassword(""); }
+      }}>
+        <DialogContent className="sm:max-w-md bg-card border-border">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <div className="p-2 rounded-lg bg-primary/10"><Lock className="w-4 h-4 text-primary" /></div>
+              Change Password
+            </DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleUpdatePassword} className="py-4 space-y-4">
+            <div>
+              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1.5 block">New Password</label>
+              <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder="Minimum 6 characters" required minLength={6} className="w-full h-10 px-3 rounded-md bg-secondary border border-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all" />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1.5 block">Confirm Password</label>
+              <input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} placeholder="Type password again" required minLength={6} className="w-full h-10 px-3 rounded-md bg-secondary border border-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all" />
+            </div>
+            <DialogFooter className="mt-6">
+              <Button type="button" variant="outline" onClick={() => setIsChangingPassword(false)}>Cancel</Button>
+              <Button type="submit" disabled={isUpdatingPassword}>
+                {isUpdatingPassword ? "Updating..." : "Update Password"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </motion.aside>
   );
 };
